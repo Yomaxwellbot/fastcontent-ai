@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AuthButton from "./AuthButton";
@@ -37,9 +37,17 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const router = useRouter();
+  const resultsRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   const isPro = subscriptionStatus === "active";
+
+  // Auto-scroll to results when they appear
+  useEffect(() => {
+    if (results && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [results]);
 
   const toggleOutput = (type: OutputType) => {
     setSelectedOutputs((prev) =>
@@ -253,7 +261,7 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
 
         {/* Results */}
         {results && (
-          <div className="mt-8 space-y-6">
+          <div ref={resultsRef} className="mt-8 space-y-6">
             {results.twitter && (
               <ResultCard title="Twitter Thread" content={results.twitter} id="twitter" copied={copied} onCopy={handleCopy} />
             )}
@@ -301,7 +309,7 @@ function ResultCard({
           {copied === id ? "Copied!" : "Copy"}
         </button>
       </div>
-      <pre className="text-gray-300 text-sm whitespace-pre-wrap font-sans leading-relaxed">
+      <pre className="text-gray-300 text-sm whitespace-pre-wrap font-sans leading-relaxed max-h-96 overflow-y-auto">
         {content}
       </pre>
     </div>
