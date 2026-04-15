@@ -53,6 +53,11 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
     setError(null);
     setResults(null);
 
+    if (!user) {
+      router.push("/auth/login");
+      return;
+    }
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -63,7 +68,8 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
       const data = await res.json();
 
       if (res.status === 401) {
-        router.push("/auth/login");
+        setError("Your session expired. Redirecting to login...");
+        setTimeout(() => router.push("/auth/login"), 1500);
         return;
       }
 
@@ -234,7 +240,7 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
             disabled={loading || !inputText.trim() || selectedOutputs.length === 0}
             className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold text-lg transition-colors"
           >
-            {loading ? "Generating..." : "Generate Content →"}
+            {loading ? "Generating..." : user ? "Generate Content →" : "Sign in to Generate →"}
           </button>
 
           {/* Error */}

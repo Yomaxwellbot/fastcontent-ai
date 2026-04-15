@@ -24,8 +24,7 @@ export default function AuthCallbackPage() {
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (!error) {
-          router.push("/");
-          router.refresh();
+          window.location.replace("/");
           return;
         }
         console.error("[auth/callback] PKCE exchange failed:", error.message);
@@ -38,10 +37,8 @@ export default function AuthCallbackPage() {
           refresh_token: refreshToken,
         });
         if (!error) {
-          // Clear the tokens from the URL
-          window.history.replaceState(null, "", window.location.pathname);
-          router.push("/");
-          router.refresh();
+          // Full page reload — ensures cookies are flushed and server reads fresh session
+          window.location.replace("/");
           return;
         }
         console.error("[auth/callback] setSession failed:", error.message);
