@@ -309,7 +309,7 @@ function ResultCard({
           {copied === id ? "Copied!" : "Copy"}
         </button>
       </div>
-      <pre className="text-gray-300 text-sm whitespace-pre-wrap font-sans leading-relaxed max-h-96 overflow-y-auto">
+      <pre className="text-gray-300 text-sm whitespace-pre-wrap font-sans leading-relaxed">
         {content}
       </pre>
     </div>
