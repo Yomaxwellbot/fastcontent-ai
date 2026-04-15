@@ -29,25 +29,17 @@ export default function AuthCallbackPage() {
       }
 
       // --- Implicit flow: #access_token=xxx ---
-      // Send tokens to server route which sets proper HTTP cookies
+      // Navigate directly to server route — it sets cookies + redirects to /
       if (accessToken && refreshToken) {
-        const res = await fetch("/api/auth/exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+        const params = new URLSearchParams({
+          access_token: accessToken,
+          refresh_token: refreshToken,
         });
-
-        if (res.ok) {
-          // Cookies are now set in the browser — do a hard redirect so server reads them
-          window.location.replace("/");
-          return;
-        }
-
-        const data = await res.json();
-        console.error("[auth/callback] exchange failed:", data.error);
+        window.location.replace(`/api/auth/exchange?${params.toString()}`);
+        return;
       }
 
-      // Nothing worked
+      // Nothing to process
       setStatus("Login failed. Please try again.");
       setTimeout(() => router.push("/auth/login?error=auth_callback_failed"), 1500);
     }

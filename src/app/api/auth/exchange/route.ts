@@ -2,20 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 /**
- * Exchanges access_token + refresh_token (from implicit flow hash)
- * into proper server-side cookies that Next.js middleware can read.
+ * GET /api/auth/exchange?access_token=xxx&refresh_token=yyy
  *
- * Called client-side after parsing the magic link hash.
+ * Called from the client callback page with tokens parsed from the hash.
+ * Sets proper HTTP session cookies and redirects to /.
+ * Excluded from middleware so cookies are not overwritten.
  */
-export async function POST(req: NextRequest) {
-  const { access_token, refresh_token } = await req.json();
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const access_token = searchParams.get("access_token");
+  const refresh_token = searchParams.get("refresh_token");
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://fastcontent.yomaxwell.space";
 
   if (!access_token || !refresh_token) {
-    return NextResponse.json({ error: "Missing tokens" }, { status: 400 });
+    return NextResponse.redirect(`${appUrl}/auth/login?error=missing_tokens`);
   }
 
-  // Build response first so we can attach cookies to it
-  const response = NextResponse.json({ success: true });
+  // Create redirect response first — we'll attach cookies to it
+  const response = NextResponse.redirect(appUrl);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[auth/exchange] setSession error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.redirect(`${appUrl}/auth/login?error=auth_callback_failed`);
   }
 
   return response;
