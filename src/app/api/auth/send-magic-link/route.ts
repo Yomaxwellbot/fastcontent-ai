@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendOtpEmail } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const LIMIT = 5;
@@ -21,19 +22,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Valid email required" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
-    // Send OTP code (no emailRedirectTo = 6-digit code, not magic link)
-    // User enters the code in the same browser — no cross-browser PKCE issues
-    const { error } = await supabase.auth.signInWithOtp({
+    // Generate OTP — admin.generateLink returns email_otp (the 6-digit code)
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: "magiclink",
       email: email.trim().toLowerCase(),
-      options: { shouldCreateUser: true },
     });
 
-    if (error) {
-      console.error("[send-otp] signInWithOtp error:", error.message);
-      return NextResponse.json({ error: "Failed to send code." }, { status: 500 });
+    if (error || !data?.properties?.email_otp) {
+      console.error("[send-otp] generateLink error:", error);
+      return NextResponse.json({ error: "Failed to generate code." }, { status: 500 });
     }
+
+    // Send our own email with just the 6-digit code — no magic link confusion
+    await sendOtpEmail(email.trim().toLowerCase(), data.properties.email_otp);
 
     return NextResponse.json({ success: true });
   } catch (e) {

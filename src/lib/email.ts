@@ -4,6 +4,50 @@ const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY!;
 const FROM_EMAIL = "noreply@yomaxwell.space";
 const FROM_NAME = "FastContent AI";
 
+export async function sendOtpEmail(to: string, otp: string): Promise<void> {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:48px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background:#111118;border-radius:16px;border:1px solid #1e1e2e;overflow:hidden;">
+        <tr><td style="padding:40px 40px 0;text-align:center;">
+          <p style="margin:0 0 4px;font-size:22px;font-weight:700;color:#818cf8;">FastContent AI</p>
+          <p style="margin:0;font-size:12px;color:#4b5563;">by Maxwell · repurpose anything, instantly</p>
+        </td></tr>
+        <tr><td style="padding:24px 40px 0;"><hr style="border:none;border-top:1px solid #1e1e2e;margin:0;" /></td></tr>
+        <tr><td style="padding:32px 40px;text-align:center;">
+          <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#f9fafb;">Your login code</h1>
+          <p style="margin:0 0 28px;font-size:15px;color:#9ca3af;">Enter this code to sign in. It expires in <strong style="color:#f9fafb;">10 minutes</strong>.</p>
+          <div style="display:inline-block;background:#1e1e2e;border:2px solid #4f46e5;border-radius:12px;padding:20px 40px;">
+            <span style="font-size:42px;font-weight:800;color:#818cf8;letter-spacing:8px;font-family:monospace;">${otp}</span>
+          </div>
+          <p style="margin:24px 0 0;font-size:12px;color:#4b5563;">If you didn&apos;t request this, ignore this email.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 32px;"><hr style="border:none;border-top:1px solid #1e1e2e;margin:0 0 20px;" />
+          <p style="margin:0;font-size:11px;color:#374151;text-align:center;">FastContent AI · Built by <a href="https://x.com/YoMaxwellAi" style="color:#4b5563;">@YoMaxwellAi</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  const text = `Your FastContent AI login code: ${otp}\n\nEnter this on the login page. Expires in 10 minutes.\n\n— FastContent AI`;
+
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: `${otp} is your FastContent AI code`,
+      content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
+    }),
+  });
+  if (!res.ok) throw new Error(`SendGrid error ${res.status}: ${await res.text()}`);
+}
+
 export async function sendMagicLinkEmail(to: string, magicLink: string): Promise<void> {
   const html = buildMagicLinkHtml(magicLink);
   const text = buildMagicLinkText(magicLink);
