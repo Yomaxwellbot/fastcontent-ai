@@ -13,6 +13,14 @@ interface GeneratedContent {
   linkedin?: string;
 }
 
+interface Generation {
+  id: string;
+  input_text: string;
+  output_types: string[];
+  results: GeneratedContent;
+  created_at: string;
+}
+
 interface UserInfo {
   id: string;
   email: string;
@@ -36,11 +44,37 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
   const [results, setResults] = useState<GeneratedContent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [history, setHistory] = useState<Generation[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const router = useRouter();
   const resultsRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   const isPro = subscriptionStatus === "active";
+
+  // Load generation history on mount
+  useEffect(() => {
+    if (user) {
+      loadHistory();
+    }
+  }, [user]);
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/generations");
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.generations || []);
+      }
+    } catch {
+      // Silent fail — history is non-critical
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   // Auto-scroll to results when they appear
   useEffect(() => {
@@ -91,11 +125,24 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
       }
 
       setResults(data.results);
+      setActiveHistoryId(null);
+      // Refresh history to include the new generation
+      loadHistory();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
+  };
+
+  const viewGeneration = (gen: Generation) => {
+    setResults(gen.results);
+    setActiveHistoryId(gen.id);
+    setError(null);
+    // Scroll to results
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   };
 
   const handleUpgrade = async () => {
@@ -275,6 +322,54 @@ export default function HomeClient({ user, subscriptionStatus }: Props) {
         )}
       </section>
 
+      {/* Generation History */}
+      {user && history.length > 0 && (
+        <section className="max-w-4xl mx-auto px-6 pb-16">
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors mb-4"
+          >
+            <span>{showHistory ? "▼" : "▶"}</span>
+            <span>Recent generations ({history.length})</span>
+          </button>
+
+          {showHistory && (
+            <div className="space-y-2">
+              {history.map((gen) => (
+                <button
+                  key={gen.id}
+                  onClick={() => viewGeneration(gen)}
+                  className={`w-full text-left p-4 rounded-xl border transition-all ${
+                    activeHistoryId === gen.id
+                      ? "border-indigo-500 bg-indigo-500/10"
+                      : "border-gray-800 bg-gray-900 hover:border-gray-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex gap-2">
+                      {gen.output_types.map((type) => (
+                        <span
+                          key={type}
+                          className="text-[10px] uppercase tracking-wider text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"
+                        >
+                          {type}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {formatTimeAgo(gen.created_at)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300 truncate">
+                    {gen.input_text.slice(0, 120)}{gen.input_text.length > 120 ? "..." : ""}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Footer */}
       <footer className="border-t border-gray-800 px-6 py-6 text-center text-xs text-gray-600">
         FastContent AI is built and run by{" "}
@@ -314,4 +409,19 @@ function ResultCard({
       </pre>
     </div>
   );
+}
+
+function formatTimeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDays === 1) return "yesterday";
+  return `${diffDays}d ago`;
 }
