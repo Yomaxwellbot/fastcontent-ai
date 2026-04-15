@@ -12,32 +12,42 @@ export default function AuthCallbackPage() {
     const supabase = createClient();
 
     async function handleCallback() {
-      // Handle PKCE flow: ?code=xxx
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
+      // Parse both query params (PKCE flow) and hash params (implicit flow)
+      const queryParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
+      const code = queryParams.get("code");
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+
+      // --- PKCE flow: ?code=xxx ---
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          setStatus("Login failed. Please try again.");
-          setTimeout(() => router.push("/auth/login?error=auth_callback_failed"), 1500);
+        if (!error) {
+          router.push("/");
+          router.refresh();
           return;
         }
+        console.error("[auth/callback] PKCE exchange failed:", error.message);
       }
 
-      // Handle implicit flow: #access_token=xxx
-      // Supabase JS client automatically picks up hash tokens on getSession()
-      const { data: { session }, error } = await supabase.auth.getSession();
-
-      if (session) {
-        setStatus("Logged in! Redirecting...");
-        router.push("/");
-        router.refresh();
-        return;
+      // --- Implicit flow: #access_token=xxx ---
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error) {
+          // Clear the tokens from the URL
+          window.history.replaceState(null, "", window.location.pathname);
+          router.push("/");
+          router.refresh();
+          return;
+        }
+        console.error("[auth/callback] setSession failed:", error.message);
       }
 
       // Nothing worked
-      console.error("[auth/callback] No session after callback:", error);
       setStatus("Login failed. Please try again.");
       setTimeout(() => router.push("/auth/login?error=auth_callback_failed"), 1500);
     }
