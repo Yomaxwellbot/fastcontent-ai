@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,19 +17,22 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    try {
-      const res = await fetch("/api/auth/send-magic-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      const data = await res.json();
-      if (res.status === 429) throw new Error(data.error);
-      if (!res.ok) throw new Error(data.error || "Failed to send link");
+    const supabase = createClient();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin;
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: {
+        emailRedirectTo: `${appUrl}/auth/callback`,
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    } else {
       setSent(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setLoading(false);
     }
   };
@@ -92,10 +96,7 @@ export default function LoginPage() {
         )}
 
         <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push("/")}
-            className="text-sm text-gray-500 hover:text-gray-300"
-          >
+          <button onClick={() => router.push("/")} className="text-sm text-gray-500 hover:text-gray-300">
             ← Back to home
           </button>
         </div>
