@@ -176,7 +176,8 @@ export async function POST(req: NextRequest) {
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                 temperature: 0.8,
-                maxOutputTokens: 3000,
+                maxOutputTokens: 8192,
+                thinkingConfig: { thinkingBudget: 256 },
               },
             }),
           }
