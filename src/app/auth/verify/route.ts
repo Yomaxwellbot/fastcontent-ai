@@ -40,14 +40,24 @@ export async function GET(req: NextRequest) {
     }
   );
 
-  const { error } = await supabase.auth.verifyOtp({
+  // Try magiclink type first, fall back to email
+  let result = await supabase.auth.verifyOtp({
     token_hash,
-    type: type as "magiclink" | "email",
+    type: "magiclink",
   });
 
-  if (error) {
-    console.error("[auth/verify] verifyOtp error:", error.message);
-    return NextResponse.redirect(`${appUrl}/auth/login?error=auth_callback_failed`);
+  if (result.error) {
+    result = await supabase.auth.verifyOtp({
+      token_hash,
+      type: "email",
+    });
+  }
+
+  if (result.error) {
+    console.error("[auth/verify] verifyOtp error:", result.error.message, result.error.status);
+    return NextResponse.redirect(
+      `${appUrl}/auth/login?error=auth_callback_failed&detail=${encodeURIComponent(result.error.message)}`
+    );
   }
 
   // Session is set — cookies are written to response — redirect to app

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       email: email.trim().toLowerCase(),
     });
 
-    if (error || !data?.properties?.hashed_token) {
+    if (error || !data?.properties?.action_link) {
       console.error("[send-magic-link] generateLink error:", error);
       return NextResponse.json(
         { error: "Failed to generate login link. Please try again." },
@@ -44,8 +44,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Extract token directly from action_link URL — most reliable source
+    const actionUrl = new URL(data.properties.action_link);
+    const token_hash = actionUrl.searchParams.get("token");
+    const tokenType = actionUrl.searchParams.get("type") ?? "magiclink";
+
+    if (!token_hash) {
+      console.error("[send-magic-link] No token in action_link:", data.properties.action_link);
+      return NextResponse.json(
+        { error: "Failed to generate login link. Please try again." },
+        { status: 500 }
+      );
+    }
+
     // Build our own verify URL — server-side route sets cookies directly
-    const verifyUrl = `${appUrl}/auth/verify?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink`;
+    const verifyUrl = `${appUrl}/auth/verify?token_hash=${encodeURIComponent(token_hash)}&type=${tokenType}`;
 
     // Send via SendGrid with our custom template
     await sendMagicLinkEmail(email.trim().toLowerCase(), verifyUrl);
