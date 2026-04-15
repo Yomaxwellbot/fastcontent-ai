@@ -30,16 +30,13 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://fastcontent.yomaxwell.space";
     const supabase = createAdminClient();
 
-    // Generate the magic link using admin client (bypasses Supabase email rate limits)
+    // Generate token using admin client (bypasses Supabase email rate limits)
     const { data, error } = await supabase.auth.admin.generateLink({
       type: "magiclink",
       email: email.trim().toLowerCase(),
-      options: {
-        redirectTo: `${appUrl}/auth/callback`,
-      },
     });
 
-    if (error || !data?.properties?.action_link) {
+    if (error || !data?.properties?.hashed_token) {
       console.error("[send-magic-link] generateLink error:", error);
       return NextResponse.json(
         { error: "Failed to generate login link. Please try again." },
@@ -47,8 +44,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Build our own verify URL — server-side route sets cookies directly
+    const verifyUrl = `${appUrl}/auth/verify?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink`;
+
     // Send via SendGrid with our custom template
-    await sendMagicLinkEmail(email.trim().toLowerCase(), data.properties.action_link);
+    await sendMagicLinkEmail(email.trim().toLowerCase(), verifyUrl);
 
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
