@@ -35,18 +35,28 @@ export default function LoginPage() {
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim() || code.length < 6) return;
+    if (!code.trim() || code.length < 4) return;
     setLoading(true);
     setError(null);
 
     const supabase = createClient();
 
-    // verifyOtp from the browser — session is stored in cookies by createBrowserClient
-    const { error } = await supabase.auth.verifyOtp({
+    // Try both types — Supabase uses 'email' for OTP from generateLink({type:'magiclink'})
+    let result = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: code.trim(),
       type: "email",
     });
+
+    if (result.error) {
+      result = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: code.trim(),
+        type: "magiclink" as "email",
+      });
+    }
+
+    const { error } = result;
 
     if (error) {
       setError(error.message.includes("expired") || error.message.includes("invalid")
@@ -86,7 +96,7 @@ export default function LoginPage() {
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl font-semibold transition-colors">
               {loading ? "Sending..." : "Send login code →"}
             </button>
-            <p className="text-xs text-gray-500 text-center">We&apos;ll email you a 6-digit code.</p>
+            <p className="text-xs text-gray-500 text-center">We&apos;ll email you a login code.</p>
           </form>
         ) : (
           <form onSubmit={handleVerifyCode} className="bg-gray-900 rounded-2xl border border-gray-800 p-8 space-y-4">
@@ -95,22 +105,22 @@ export default function LoginPage() {
               <p className="text-gray-300 text-sm">Code sent to <span className="text-white font-medium">{email}</span></p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Enter your 6-digit code</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Enter your login code</label>
               <input
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                maxLength={6}
+                maxLength={8}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="123456"
+                placeholder="········"
                 required
                 autoFocus
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center text-2xl tracking-widest font-mono"
               />
             </div>
             {error && <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">{error}</div>}
-            <button type="submit" disabled={loading || code.length < 6}
+            <button type="submit" disabled={loading || code.length < 4}
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl font-semibold transition-colors">
               {loading ? "Verifying..." : "Sign in →"}
             </button>
