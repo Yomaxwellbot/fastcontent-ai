@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Rate limiting: simple in-memory store (resets on cold start)
-// For production, move to Redis or Supabase
-const requestCounts = new Map<string, { count: number; resetAt: number }>();
-
-const MAX_REQUESTS_PER_HOUR = 3; // Free tier limit — upgrade for unlimited
+import { createClient } from "@/lib/supabase/server";
+import { PLANS } from "@/lib/stripe";
 
 type OutputType = "twitter" | "linkedin" | "newsletter";
 
@@ -13,10 +9,6 @@ interface GenerateRequest {
   outputTypes: OutputType[];
 }
 
-/**
- * Build a prompt for the given output type.
- * Each prompt is tuned for the platform's conventions.
- */
 function buildPrompt(text: string, outputType: OutputType): string {
   const base = `You are an expert content strategist. Transform the following content into platform-optimized material.\n\nORIGINAL CONTENT:\n${text}\n\n`;
 
@@ -62,10 +54,47 @@ Format: clearly labeled sections (Subject:, Preview:, Body:, CTA:).`
 
 export async function POST(req: NextRequest) {
   try {
+    // Check auth
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Login required" }, { status: 401 });
+    }
+
+    // Get user's profile / subscription status
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("subscription_status, email")
+      .eq("id", user.id)
+      .single();
+
+    const isPro = profile?.subscription_status === "active";
+
+    // Rate limiting for free users
+    if (!isPro) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from("generations")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("created_at", oneHourAgo);
+
+      if ((count ?? 0) >= PLANS.free.generationsPerHour) {
+        return NextResponse.json(
+          {
+            error: "Free tier limit reached (3/hour). Upgrade to Pro for unlimited generations.",
+            upgradeRequired: true,
+          },
+          { status: 429 }
+        );
+      }
+    }
+
+    // Validate input
     const body: GenerateRequest = await req.json();
     const { text, outputTypes } = body;
 
-    // Validate input
     if (!text || typeof text !== "string" || text.trim().length < 50) {
       return NextResponse.json(
         { error: "Please provide at least 50 characters of content to repurpose." },
@@ -80,24 +109,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Basic rate limiting by IP
-    const ip = req.headers.get("x-forwarded-for") ?? "unknown";
-    const now = Date.now();
-    const entry = requestCounts.get(ip);
-
-    if (entry && entry.resetAt > now) {
-      if (entry.count >= MAX_REQUESTS_PER_HOUR) {
-        return NextResponse.json(
-          { error: "Rate limit reached. Free tier allows 3 generations per hour. Upgrade for unlimited access." },
-          { status: 429 }
-        );
-      }
-      entry.count++;
-    } else {
-      requestCounts.set(ip, { count: 1, resetAt: now + 60 * 60 * 1000 });
-    }
-
-    // Trim input to avoid runaway token costs
     const trimmedText = text.slice(0, 5000);
     const apiKey = process.env.GEMINI_API_KEY;
 
@@ -108,7 +119,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate each output type in parallel for speed
+    // Generate in parallel
     const generations = await Promise.all(
       outputTypes.map(async (type) => {
         const prompt = buildPrompt(trimmedText, type);
@@ -120,10 +131,7 @@ export async function POST(req: NextRequest) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                temperature: 0.8,
-                maxOutputTokens: 1024,
-              },
+              generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
             }),
           }
         );
@@ -139,11 +147,24 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    // Build results object
+    // Build results
     const results: Partial<Record<OutputType, string>> = {};
     for (const { type, content } of generations) {
       results[type] = content;
     }
+
+    // Save generation to DB
+    await supabase.from("generations").insert({
+      user_id: user.id,
+      input_text: trimmedText,
+      output_types: outputTypes,
+      results,
+    });
+
+    // Increment generation count
+    await supabase.rpc("increment_generations_count", { user_id: user.id }).catch(() => {
+      // If RPC doesn't exist, just skip — the generations table is the source of truth
+    });
 
     return NextResponse.json({ results });
   } catch (e: unknown) {
