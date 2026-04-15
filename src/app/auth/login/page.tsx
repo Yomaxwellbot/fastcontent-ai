@@ -56,21 +56,31 @@ export default function LoginPage() {
       return;
     }
 
-    // Relay tokens to server so it sets proper session cookies
-    // (browser-side cookie writes have async race conditions with @supabase/ssr)
     const session = data?.session;
-    if (session) {
-      await fetch("/api/auth/exchange", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        }),
-      });
+    if (!session) {
+      setError("Verification succeeded but no session returned. Please request a new code.");
+      setLoading(false);
+      return;
     }
 
-    // Hard reload — server now has session cookies
+    // Relay tokens to server to set proper session cookies
+    const exchangeRes = await fetch("/api/auth/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      }),
+    });
+
+    if (!exchangeRes.ok) {
+      const errData = await exchangeRes.json();
+      setError("Session setup failed: " + (errData.error || "unknown error"));
+      setLoading(false);
+      return;
+    }
+
+    // Server has session cookies — hard reload
     window.location.replace("/");
   };
 
