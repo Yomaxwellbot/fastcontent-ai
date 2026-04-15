@@ -25,17 +25,12 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh the session so it doesn't expire
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // Protect the generate API — must be logged in
   if (request.nextUrl.pathname.startsWith("/api/generate") && !user) {
     return NextResponse.json({ error: "Login required" }, { status: 401 });
   }
 
-  // Protect the billing portal — must be logged in
   if (request.nextUrl.pathname.startsWith("/api/billing") && !user) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
@@ -45,6 +40,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|auth/callback|auth/verify|api/webhooks|api/auth).*)",,
+    "/((?!_next/static|_next/image|favicon.ico|auth/callback|auth/verify|api/webhooks|api/auth).*)",
   ],
 };
