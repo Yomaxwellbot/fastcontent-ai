@@ -18,7 +18,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("generations")
-      .select("id, input_text, output_types, results, created_at")
+      .select("id, input_text, output_types, results, tokens_used, created_at")
       .eq("user_id", user.id)
       .gte("created_at", fourteenDaysAgo)
       .order("created_at", { ascending: false })

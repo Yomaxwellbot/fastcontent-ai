@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { PLANS } from "@/lib/stripe";
+import { TOKEN_LIMIT } from "@/lib/stripe";
 
 type OutputType = "twitter" | "linkedin" | "newsletter";
 
@@ -61,41 +61,69 @@ Format: clearly labeled sections (Subject:, Preview:, Body:, CTA:).`
 
 export async function POST(req: NextRequest) {
   try {
-    // Check auth
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: "Login required" }, { status: 401 });
     }
 
-    // Get user's profile / subscription status
+    // Fetch profile with token metering fields
     const { data: profile } = await supabase
       .from("profiles")
-      .select("subscription_status, email")
+      .select(
+        "subscription_status, tokens_used_this_period, token_limit, period_started_at, period_ends_at"
+      )
       .eq("id", user.id)
       .single();
 
-    const isPro = profile?.subscription_status === "active";
+    if (!profile || profile.subscription_status !== "active") {
+      return NextResponse.json(
+        {
+          error: "subscription_required",
+          message:
+            "A FastContent Pro subscription ($6/mo) is required to generate content.",
+          upgradeRequired: true,
+        },
+        { status: 402 }
+      );
+    }
 
-    // Rate limiting for free users
-    if (!isPro) {
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const { count } = await supabase
-        .from("generations")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .gte("created_at", oneHourAgo);
+    // Period reset check: if past period_ends_at, reset tokens
+    let tokensUsed = profile.tokens_used_this_period ?? 0;
+    const tokenLimit = profile.token_limit ?? TOKEN_LIMIT;
+    let periodEndsAt = profile.period_ends_at;
 
-      if ((count ?? 0) >= PLANS.free.generationsPerHour) {
-        return NextResponse.json(
-          {
-            error: "Free tier limit reached (3/hour). Upgrade to Pro for unlimited generations.",
-            upgradeRequired: true,
-          },
-          { status: 429 }
-        );
-      }
+    if (periodEndsAt && new Date(periodEndsAt) < new Date()) {
+      // Period expired — reset
+      const now = new Date();
+      const newEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      await supabase
+        .from("profiles")
+        .update({
+          tokens_used_this_period: 0,
+          period_started_at: now.toISOString(),
+          period_ends_at: newEnd.toISOString(),
+        })
+        .eq("id", user.id);
+      tokensUsed = 0;
+      periodEndsAt = newEnd.toISOString();
+    }
+
+    // Token limit check
+    if (tokensUsed >= tokenLimit) {
+      return NextResponse.json(
+        {
+          error: "token_limit_reached",
+          message: `You've used all ${tokenLimit.toLocaleString()} tokens for this month`,
+          reset_date: periodEndsAt,
+          used: tokensUsed,
+          limit: tokenLimit,
+        },
+        { status: 429 }
+      );
     }
 
     // Validate input
@@ -104,12 +132,19 @@ export async function POST(req: NextRequest) {
 
     if (!text || typeof text !== "string" || text.trim().length < 50) {
       return NextResponse.json(
-        { error: "Please provide at least 50 characters of content to repurpose." },
+        {
+          error:
+            "Please provide at least 50 characters of content to repurpose.",
+        },
         { status: 400 }
       );
     }
 
-    if (!outputTypes || !Array.isArray(outputTypes) || outputTypes.length === 0) {
+    if (
+      !outputTypes ||
+      !Array.isArray(outputTypes) ||
+      outputTypes.length === 0
+    ) {
       return NextResponse.json(
         { error: "Please select at least one output type." },
         { status: 400 }
@@ -126,7 +161,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate in parallel
+    // Generate in parallel, cap output at 3000 tokens per generation
+    let totalTokens = 0;
     const generations = await Promise.all(
       outputTypes.map(async (type) => {
         const prompt = buildPrompt(trimmedText, type);
@@ -138,19 +174,33 @@ export async function POST(req: NextRequest) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
+              generationConfig: {
+                temperature: 0.8,
+                maxOutputTokens: 3000,
+              },
             }),
           }
         );
 
         if (!res.ok) {
           const err = await res.json();
-          throw new Error(err.error?.message ?? `AI generation failed for ${type}`);
+          throw new Error(
+            err.error?.message ?? `AI generation failed for ${type}`
+          );
         }
 
         const data = await res.json();
-        const content = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-        return { type, content };
+        const content =
+          data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+        // Extract token usage from Gemini response
+        const usageMeta = data.usageMetadata;
+        const promptTokens = usageMeta?.promptTokenCount ?? 0;
+        const candidateTokens = usageMeta?.candidatesTokenCount ?? 0;
+        const reqTokens = promptTokens + candidateTokens;
+        totalTokens += reqTokens;
+
+        return { type, content, tokens: reqTokens };
       })
     );
 
@@ -160,17 +210,30 @@ export async function POST(req: NextRequest) {
       results[type] = content;
     }
 
-    // Save generation to DB
+    // Atomic token increment via RPC
+    await supabase.rpc("increment_tokens_used", {
+      p_user_id: user.id,
+      p_tokens: totalTokens,
+    });
+
+    // Save generation to DB with token count
     await supabase.from("generations").insert({
       user_id: user.id,
       input_text: trimmedText,
       output_types: outputTypes,
       results,
+      tokens_used: totalTokens,
     });
 
-    // Generation count is tracked via the generations table itself
+    const newTokensUsed = tokensUsed + totalTokens;
 
-    return NextResponse.json({ results });
+    return NextResponse.json({
+      results,
+      tokens_used_this_request: totalTokens,
+      tokens_used_this_period: newTokensUsed,
+      token_limit: tokenLimit,
+      period_ends_at: periodEndsAt,
+    });
   } catch (e: unknown) {
     console.error("[/api/generate] Error:", e);
     return NextResponse.json(

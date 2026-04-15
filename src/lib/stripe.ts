@@ -5,20 +5,14 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 });
 
-// Price ID for the $19/mo plan — set this in env vars after creating the product in Stripe
+// Price ID for the $6/mo token-based plan
 export const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID!;
 
-export const PLANS = {
-  free: {
-    name: "Free",
-    price: 0,
-    generationsPerHour: 3,
-  },
-  pro: {
-    name: "Pro",
-    price: 19,
-    generationsPerHour: Infinity,
-  },
-} as const;
+export const TOKEN_LIMIT = 1_000_000;
+export const TOKEN_LIMIT_FORMATTED = "1,000,000";
 
-export type PlanType = keyof typeof PLANS;
+export const PLAN = {
+  name: "Pro",
+  price: 6,
+  tokenLimit: TOKEN_LIMIT,
+} as const;

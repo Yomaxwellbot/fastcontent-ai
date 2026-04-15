@@ -3,12 +3,24 @@ import { stripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import Stripe from "stripe";
 
-// Disable body parsing — Stripe needs the raw body to verify the signature
 export const runtime = "nodejs";
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-async function updateProfile(userId: string, updates: Record<string, unknown>) {
+async function getProfileByStripeCustomer(customerId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, period_started_at")
+    .eq("stripe_customer_id", customerId)
+    .single();
+  return data;
+}
+
+async function updateProfile(
+  userId: string,
+  updates: Record<string, unknown>
+) {
   const supabase = await createClient();
   const { error } = await supabase
     .from("profiles")
@@ -20,14 +32,32 @@ async function updateProfile(userId: string, updates: Record<string, unknown>) {
   }
 }
 
-async function getProfileByStripeCustomer(customerId: string) {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("stripe_customer_id", customerId)
-    .single();
-  return data;
+function handleSubscriptionPeriod(
+  subscription: Stripe.Subscription,
+  existingPeriodStart: string | null
+) {
+  const periodStart = new Date(
+    subscription.current_period_start * 1000
+  ).toISOString();
+  const periodEnd = new Date(
+    subscription.current_period_end * 1000
+  ).toISOString();
+
+  // Only reset tokens if this is a new period (period_start changed)
+  const isRenewal =
+    !existingPeriodStart || periodStart !== existingPeriodStart;
+
+  const updates: Record<string, unknown> = {
+    period_started_at: periodStart,
+    period_ends_at: periodEnd,
+    current_period_end: periodEnd,
+  };
+
+  if (isRenewal) {
+    updates.tokens_used_this_period = 0;
+  }
+
+  return updates;
 }
 
 export async function POST(req: NextRequest) {
@@ -49,44 +79,88 @@ export async function POST(req: NextRequest) {
       const customerId = session.customer as string;
       const subscriptionId = session.subscription as string;
 
-      // Get subscription details
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscription =
+        await stripe.subscriptions.retrieve(subscriptionId);
       const profile = await getProfileByStripeCustomer(customerId);
 
       if (profile) {
+        const periodUpdates = handleSubscriptionPeriod(
+          subscription,
+          profile.period_started_at
+        );
         await updateProfile(profile.id, {
           subscription_status: "active",
           subscription_id: subscriptionId,
           price_id: subscription.items.data[0]?.price.id,
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          ...periodUpdates,
         });
       }
       break;
     }
 
+    case "customer.subscription.created":
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
-      const profile = await getProfileByStripeCustomer(subscription.customer as string);
+      const profile = await getProfileByStripeCustomer(
+        subscription.customer as string
+      );
 
       if (profile) {
+        const periodUpdates = handleSubscriptionPeriod(
+          subscription,
+          profile.period_started_at
+        );
         await updateProfile(profile.id, {
-          subscription_status: subscription.status === "active" ? "active" : subscription.status,
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          subscription_status:
+            subscription.status === "active"
+              ? "active"
+              : subscription.status,
+          ...periodUpdates,
         });
+      }
+      break;
+    }
+
+    case "invoice.payment_succeeded": {
+      const invoice = event.data.object as Stripe.Invoice;
+      // Only handle subscription renewals (not first payment)
+      if (
+        invoice.billing_reason === "subscription_cycle" &&
+        invoice.subscription
+      ) {
+        const subscription = await stripe.subscriptions.retrieve(
+          invoice.subscription as string
+        );
+        const profile = await getProfileByStripeCustomer(
+          invoice.customer as string
+        );
+
+        if (profile) {
+          const periodUpdates = handleSubscriptionPeriod(
+            subscription,
+            profile.period_started_at
+          );
+          await updateProfile(profile.id, {
+            subscription_status: "active",
+            ...periodUpdates,
+          });
+        }
       }
       break;
     }
 
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
-      const profile = await getProfileByStripeCustomer(subscription.customer as string);
+      const profile = await getProfileByStripeCustomer(
+        subscription.customer as string
+      );
 
       if (profile) {
+        // Don't zero out tokens — let user use what's left until period ends
         await updateProfile(profile.id, {
-          subscription_status: "free",
+          subscription_status: "cancelled",
           subscription_id: null,
           price_id: null,
-          current_period_end: null,
         });
       }
       break;
