@@ -23,6 +23,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email: email.trim() }),
       });
       const data = await res.json();
+      if (res.status === 429) throw new Error(data.error);
       if (!res.ok) throw new Error(data.error || "Failed to send link");
       setSent(true);
     } catch (err: unknown) {

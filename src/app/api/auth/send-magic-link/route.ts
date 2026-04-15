@@ -1,9 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMagicLinkEmail } from "@/lib/email";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+// 5 magic link requests per IP per 15 minutes
+const MAGIC_LINK_LIMIT = 5;
+const MAGIC_LINK_WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit by IP before doing anything else
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+    const rl = checkRateLimit(`magic_link:${ip}`, MAGIC_LINK_LIMIT, MAGIC_LINK_WINDOW_MS);
+
+    if (!rl.allowed) {
+      const retryAfterSec = Math.ceil((rl.resetAt - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: "Too many login attempts. Please wait a few minutes and try again." },
+        { status: 429, headers: { "Retry-After": String(retryAfterSec) } }
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email || typeof email !== "string" || !email.includes("@")) {

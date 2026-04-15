@@ -1,3 +1,5 @@
+import "server-only";
+
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY!;
 const FROM_EMAIL = "noreply@yomaxwell.space";
 const FROM_NAME = "FastContent AI";
