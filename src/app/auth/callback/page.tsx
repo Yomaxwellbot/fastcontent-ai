@@ -9,10 +9,7 @@ export default function AuthCallbackPage() {
   const [status, setStatus] = useState("Signing you in...");
 
   useEffect(() => {
-    const supabase = createClient();
-
     async function handleCallback() {
-      // Parse both query params (PKCE flow) and hash params (implicit flow)
       const queryParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
@@ -22,6 +19,7 @@ export default function AuthCallbackPage() {
 
       // --- PKCE flow: ?code=xxx ---
       if (code) {
+        const supabase = createClient();
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (!error) {
           window.location.replace("/");
@@ -31,17 +29,22 @@ export default function AuthCallbackPage() {
       }
 
       // --- Implicit flow: #access_token=xxx ---
+      // Send tokens to server route which sets proper HTTP cookies
       if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
+        const res = await fetch("/api/auth/exchange", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
         });
-        if (!error) {
-          // Full page reload — ensures cookies are flushed and server reads fresh session
+
+        if (res.ok) {
+          // Cookies are now set in the browser — do a hard redirect so server reads them
           window.location.replace("/");
           return;
         }
-        console.error("[auth/callback] setSession failed:", error.message);
+
+        const data = await res.json();
+        console.error("[auth/callback] exchange failed:", data.error);
       }
 
       // Nothing worked
