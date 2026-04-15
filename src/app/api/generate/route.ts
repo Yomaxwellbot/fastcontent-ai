@@ -161,10 +161,7 @@ export async function POST(req: NextRequest) {
       results,
     });
 
-    // Increment generation count
-    await supabase.rpc("increment_generations_count", { user_id: user.id }).catch(() => {
-      // If RPC doesn't exist, just skip — the generations table is the source of truth
-    });
+    // Generation count is tracked via the generations table itself
 
     return NextResponse.json({ results });
   } catch (e: unknown) {
