@@ -8,10 +8,10 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
-<body style="margin:0;padding:0;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:48px 16px;">
-    <tr><td align="center">
-      <table width="100%" style="max-width:520px;background:#111118;border-radius:16px;border:1px solid #1e1e2e;overflow:hidden;">
+<body style="margin:0;padding:0;background-color:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" bgcolor="#0a0a0f">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0f;padding:48px 16px;" bgcolor="#0a0a0f">
+    <tr><td align="center" bgcolor="#0a0a0f">
+      <table width="100%" style="max-width:520px;background-color:#111118;border-radius:16px;border:1px solid #1e1e2e;overflow:hidden;" bgcolor="#111118">
         <tr><td style="padding:40px 40px 0;text-align:center;">
           <p style="margin:0 0 4px;font-size:22px;font-weight:700;color:#818cf8;">FastContent AI</p>
           <p style="margin:0;font-size:12px;color:#4b5563;">by Maxwell · repurpose anything, instantly</p>
@@ -20,9 +20,9 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
         <tr><td style="padding:32px 40px;text-align:center;">
           <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#f9fafb;">Your login code</h1>
           <p style="margin:0 0 28px;font-size:15px;color:#9ca3af;">Enter this code to sign in. It expires in <strong style="color:#f9fafb;">10 minutes</strong>.</p>
-          <div style="display:inline-block;background:#1e1e2e;border:2px solid #4f46e5;border-radius:12px;padding:20px 40px;">
+          <table cellpadding="0" cellspacing="0" align="center"><tr><td style="background-color:#1e1e2e;border:2px solid #4f46e5;border-radius:12px;padding:20px 40px;" bgcolor="#1e1e2e">
             <span style="font-size:42px;font-weight:800;color:#818cf8;letter-spacing:8px;font-family:monospace;">${otp}</span>
-          </div>
+          </td></tr></table>
           <p style="margin:24px 0 0;font-size:12px;color:#4b5563;">If you didn&apos;t request this, ignore this email.</p>
         </td></tr>
         <tr><td style="padding:0 40px 32px;"><hr style="border:none;border-top:1px solid #1e1e2e;margin:0 0 20px;" />
@@ -83,11 +83,11 @@ function buildMagicLinkHtml(link: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Your FastContent AI login link</title>
 </head>
-<body style="margin:0;padding:0;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:48px 16px;">
+<body style="margin:0;padding:0;background-color:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" bgcolor="#0a0a0f">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0f;padding:48px 16px;" bgcolor="#0a0a0f">
     <tr>
-      <td align="center">
-        <table width="100%" style="max-width:520px;background:#111118;border-radius:16px;border:1px solid #1e1e2e;overflow:hidden;">
+      <td align="center" bgcolor="#0a0a0f">
+        <table width="100%" style="max-width:520px;background-color:#111118;border-radius:16px;border:1px solid #1e1e2e;overflow:hidden;" bgcolor="#111118">
 
           <!-- Header -->
           <tr>
@@ -119,7 +119,7 @@ function buildMagicLinkHtml(link: string): string {
                 <tr>
                   <td align="center">
                     <a href="${link}"
-                       style="display:inline-block;padding:14px 32px;background:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px;letter-spacing:0.2px;">
+                       style="display:inline-block;padding:14px 32px;background-color:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px;letter-spacing:0.2px;">
                       Sign in to FastContent AI →
                     </a>
                   </td>
