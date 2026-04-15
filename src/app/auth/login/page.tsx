@@ -41,22 +41,12 @@ export default function LoginPage() {
 
     const supabase = createClient();
 
-    // Try both types — Supabase uses 'email' for OTP from generateLink({type:'magiclink'})
-    let result = await supabase.auth.verifyOtp({
+    // Verify the OTP code
+    const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: code.trim(),
       type: "email",
     });
-
-    if (result.error) {
-      result = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: code.trim(),
-        type: "magiclink" as "email",
-      });
-    }
-
-    const { error } = result;
 
     if (error) {
       setError(error.message.includes("expired") || error.message.includes("invalid")
@@ -66,7 +56,21 @@ export default function LoginPage() {
       return;
     }
 
-    // Session is now in browser cookies — hard reload so server picks it up
+    // Relay tokens to server so it sets proper session cookies
+    // (browser-side cookie writes have async race conditions with @supabase/ssr)
+    const session = data?.session;
+    if (session) {
+      await fetch("/api/auth/exchange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        }),
+      });
+    }
+
+    // Hard reload — server now has session cookies
     window.location.replace("/");
   };
 
