@@ -1,5 +1,5 @@
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY!;
-const FROM_EMAIL = "noreply@em2892.yomaxwell.space";
+const FROM_EMAIL = "noreply@yomaxwell.space";
 const FROM_NAME = "FastContent AI";
 
 export async function sendMagicLinkEmail(to: string, magicLink: string): Promise<void> {
