@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const urlError = searchParams?.get("error");
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    urlError === "link_expired" ? "That login link has already been used or expired. Request a new one below." :
+    urlError === "auth_callback_failed" ? "Login failed. Please try again." : null
+  );
   const router = useRouter();
 
   const handleMagicLink = async (e: React.FormEvent) => {

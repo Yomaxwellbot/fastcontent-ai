@@ -15,6 +15,10 @@ export async function GET(request: NextRequest) {
     }
 
     console.error("[auth/callback] exchangeCodeForSession error:", error.message);
+
+    // Code already used or expired — send to login with helpful message
+    const expired = error.message.toLowerCase().includes("expired") || error.message.toLowerCase().includes("already");
+    return NextResponse.redirect(`${appUrl}/auth/login?error=${expired ? "link_expired" : "auth_callback_failed"}`);
   }
 
   return NextResponse.redirect(`${appUrl}/auth/login?error=auth_callback_failed`);
