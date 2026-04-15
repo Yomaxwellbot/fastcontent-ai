@@ -5,41 +5,59 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
-  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const urlError = searchParams?.get("error");
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(
-    urlError === "link_expired" ? "That login link has already been used or expired. Request a new one below." :
-    urlError === "auth_callback_failed" ? "Login failed. Please try again." : null
-  );
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const handleMagicLink = async (e: React.FormEvent) => {
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin;
+    const res = await fetch("/api/auth/send-magic-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+    const data = await res.json();
 
-    const { error } = await supabase.auth.signInWithOtp({
+    if (!res.ok) {
+      setError(data.error || "Failed to send code.");
+    } else {
+      setCodeSent(true);
+    }
+    setLoading(false);
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code.trim() || code.length < 6) return;
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+
+    // verifyOtp from the browser — session is stored in cookies by createBrowserClient
+    const { error } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
-      options: {
-        emailRedirectTo: `${appUrl}/auth/callback`,
-        shouldCreateUser: true,
-      },
+      token: code.trim(),
+      type: "email",
     });
 
     if (error) {
-      setError(error.message);
+      setError(error.message.includes("expired") || error.message.includes("invalid")
+        ? "That code is invalid or expired. Request a new one."
+        : error.message);
       setLoading(false);
-    } else {
-      setSent(true);
-      setLoading(false);
+      return;
     }
+
+    // Session is now in browser cookies — hard reload so server picks it up
+    window.location.replace("/");
   };
 
   return (
@@ -50,26 +68,10 @@ export default function LoginPage() {
           <p className="text-gray-400 text-sm">Login to start repurposing content</p>
         </div>
 
-        {sent ? (
-          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 text-center">
-            <div className="text-4xl mb-4">📧</div>
-            <h2 className="text-xl font-semibold mb-2">Check your email</h2>
-            <p className="text-gray-400 text-sm mb-6">
-              We sent a login link to <span className="text-white">{email}</span>
-            </p>
-            <button
-              onClick={() => { setSent(false); setEmail(""); }}
-              className="text-indigo-400 text-sm hover:underline"
-            >
-              Use a different email
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleMagicLink} className="bg-gray-900 rounded-2xl border border-gray-800 p-8 space-y-4">
+        {!codeSent ? (
+          <form onSubmit={handleSendCode} className="bg-gray-900 rounded-2xl border border-gray-800 p-8 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Email address
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Email address</label>
               <input
                 type="email"
                 value={email}
@@ -79,31 +81,48 @@ export default function LoginPage() {
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-
-            {error && (
-              <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || !email.trim()}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl font-semibold transition-colors"
-            >
-              {loading ? "Sending..." : "Send magic link →"}
+            {error && <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">{error}</div>}
+            <button type="submit" disabled={loading || !email.trim()}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl font-semibold transition-colors">
+              {loading ? "Sending..." : "Send login code →"}
             </button>
-
-            <p className="text-xs text-gray-500 text-center">
-              No password needed. We&apos;ll email you a login link.
-            </p>
+            <p className="text-xs text-gray-500 text-center">We&apos;ll email you a 6-digit code.</p>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyCode} className="bg-gray-900 rounded-2xl border border-gray-800 p-8 space-y-4">
+            <div className="text-center mb-2">
+              <div className="text-3xl mb-3">📬</div>
+              <p className="text-gray-300 text-sm">Code sent to <span className="text-white font-medium">{email}</span></p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Enter your 6-digit code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="123456"
+                required
+                autoFocus
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center text-2xl tracking-widest font-mono"
+              />
+            </div>
+            {error && <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">{error}</div>}
+            <button type="submit" disabled={loading || code.length < 6}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl font-semibold transition-colors">
+              {loading ? "Verifying..." : "Sign in →"}
+            </button>
+            <button type="button" onClick={() => { setCodeSent(false); setCode(""); setError(null); }}
+              className="w-full text-sm text-gray-500 hover:text-gray-300">
+              ← Use a different email
+            </button>
           </form>
         )}
 
         <div className="mt-6 text-center">
-          <button onClick={() => router.push("/")} className="text-sm text-gray-500 hover:text-gray-300">
-            ← Back to home
-          </button>
+          <button onClick={() => router.push("/")} className="text-sm text-gray-500 hover:text-gray-300">← Back to home</button>
         </div>
       </div>
     </main>
