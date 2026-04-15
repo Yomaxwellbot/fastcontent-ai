@@ -36,15 +36,22 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  // Debug: log cookies present (names only, not values)
+  const cookieNames = request.cookies.getAll().map(c => c.name);
+  console.log("[auth/callback] cookies present:", cookieNames.join(", ") || "NONE");
+  console.log("[auth/callback] code length:", code.length);
+
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    console.error("[auth/callback] exchangeCodeForSession error:", error.message);
+    console.error("[auth/callback] exchangeCodeForSession FAILED:", error.message, error.status);
     const expired = error.message.toLowerCase().includes("expired") || error.message.toLowerCase().includes("already");
     return NextResponse.redirect(
-      `${appUrl}/auth/login?error=${expired ? "link_expired" : "auth_callback_failed"}`
+      `${appUrl}/auth/login?error=${expired ? "link_expired" : "auth_callback_failed"}&detail=${encodeURIComponent(error.message)}`
     );
   }
+
+  console.log("[auth/callback] session created for:", data.user?.email);
 
   // Session cookies are on the response — browser stores them before following redirect
   return response;
