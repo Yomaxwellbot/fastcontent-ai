@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -10,7 +9,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,19 +16,18 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        emailRedirectTo: `${appUrl}/auth/callback`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+    try {
+      const res = await fetch("/api/auth/send-magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send link");
       setSent(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
       setLoading(false);
     }
   };
